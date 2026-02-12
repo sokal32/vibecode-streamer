@@ -79,7 +79,7 @@ export class Streamer {
 
     output.segments = segments;
 
-    return this.generateVODVariant(manifest);
+    return this.generateVODVariant(output);
   }
 
   // Generate VOD variant M3U8 playlist
