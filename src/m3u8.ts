@@ -15,6 +15,7 @@ export interface M3U8Playlist {
   tags: Tag[];
   segments?: MediaSegment[];
   variants?: Variant[];
+  url?: string;
 }
 
 export interface Tag {

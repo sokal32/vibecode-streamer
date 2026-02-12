@@ -4,17 +4,12 @@
   "description": "HLS VOD-to-Live stream converter",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsnd --respawn main.ts",
+    "dev": "ts-node-dev --respawn --transpile-only main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "test": "jest"
   },
-  "keywords": [
-    "hls",
-    "streaming",
-    "vod",
-    "live"
-  ],
+  "keywords": ["hls", "streaming", "vod", "live"],
   "author": "",
   "license": "CC-BY-4.0",
   "dependencies": {

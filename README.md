@@ -20,7 +20,6 @@ All test streams used in this repository are sourced from the [Mux test streams 
 
 - **BigBuckBunny** - Standard test stream
 - **ARTEChina** - Alternative test content
-- **HLSJSIssues666** - Edge case testing
 - **DKTurntable** - PTS shifted by 2.3s
 - **TearsOfSteal** - Includes IMSC Captions
 

@@ -12,12 +12,8 @@ app.get('/live.m3u8', async (req, res) => {
     const now = req.query.now ? +req.query.now : Date.now();
     const windowSize = req.query.windowSize ? +req.query.windowSize : undefined;
 
-    if (!stream) {
-      res.status(400).send('Missing required parameter: stream');
-      return;
-    }
-
     const manifest = await streamer.convertVODToLive(stream, variant, start, now, windowSize);
+
     await streamer.sendManifest(res, manifest);
   } catch (error) {
     console.error('Error processing Live request:', error);
@@ -31,12 +27,8 @@ app.get('/vod.m3u8', async (req, res) => {
     const variant = req.query.variant ? +req.query.variant : undefined;
     const duration = req.query.duration ? +req.query.duration : undefined;
 
-    if (!stream) {
-      res.status(400).send('Missing required parameter: stream');
-      return;
-    }
-
     const manifest = await streamer.makeVOD(stream, variant, duration);
+    
     await streamer.sendManifest(res, manifest);
   } catch (error) {
     console.error('Error processing VOD request:', error);
