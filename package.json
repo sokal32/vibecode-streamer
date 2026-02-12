@@ -1,0 +1,41 @@
+{
+  "name": "streamer",
+  "version": "0.0.1",
+  "description": "HLS VOD-to-Live stream converter",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsnd --respawn main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "hls",
+    "streaming",
+    "vod",
+    "live"
+  ],
+  "author": "",
+  "license": "CC-BY-4.0",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^8.57.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
