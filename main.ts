@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as https from 'https';
+import dotenv from 'dotenv';
 import express from 'express';
 import { Streamer } from './src/streamer';
 
@@ -40,8 +43,23 @@ app.get('/health', (_req, res) => {
   res.sendStatus(200);
 });
 
-const port = process.env.PORT ? +process.env.PORT : 3000;
+dotenv.config();
 
-app.listen(port, () => {
-  console.log(`HLS VOD-to-Live stream converter is running on port ${port}`);
-});
+const port = process.env.PORT ? +process.env.PORT : 3000;
+const isHTTPS = process.env.SSL !== '';
+
+if (isHTTPS) {
+  const options = process.env.SSL == '' ? {} : {
+    key: fs.readFileSync(process.env.SSL_KEY_PATH || 'cert/key.pem'),
+    cert: fs.readFileSync(process.env.SSL_CERT_PATH || 'cert/cert.pem'),
+    passphrase: process.env.SSL_PASSPHRASE || undefined,
+  };
+
+  https.createServer(options, app).listen(port, () =>
+    console.log(`HLS VOD-to-Live stream converter is running on port ${port}`)
+  );
+} else {
+  app.listen(port, () =>
+    console.log(`HLS VOD-to-Live stream converter is running on port ${port}`)
+  );
+}

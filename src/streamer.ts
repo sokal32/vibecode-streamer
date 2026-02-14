@@ -15,7 +15,7 @@ export class Streamer {
 
     return variant !== undefined
       ? this.fitVariant(manifest, duration)
-      : this.generateMaster(stream, false, manifest, 0, duration);
+      : this.generateMaster('vod', stream, manifest, 0, duration);
   }
 
   async convertVODToLive(stream?: string, variant?: number, start = Date.now(), now = Date.now(), windowSize = this.defaultWindowSize): Promise<string> {
@@ -24,23 +24,25 @@ export class Streamer {
 
     return variant !== undefined
       ? this.shuffleVariant(manifest, start, now, windowSize)
-      : this.generateMaster(stream, true, manifest, start);
+      : this.generateMaster('live', stream, manifest, start);
   }
 
   // Replace variant URIs with our links
-  private generateMaster(stream: string | undefined, isLive: boolean, manifest: M3U8Playlist, start: number, duration?: number): string {
+  private generateMaster(type: 'vod' | 'live', stream: string | undefined, manifest: M3U8Playlist, start: number, duration?: number): string {
     const output = structuredClone(manifest);
 
     // TODO: need to handle audio streams here too
     if (output.variants) {
       output.variants.forEach((playlist, i) => {
         const searchParams = new URLSearchParams();
-        searchParams.append('stream', stream ?? '');
+        
         searchParams.append('variant', `${i}`);
-        searchParams.append('start', start.toString());
-        searchParams.append('duration', (duration ?? 0).toString());
 
-        playlist.uri = `/${isLive ? 'live' : 'vod'}.m3u8?${searchParams.toString()}`;
+        if (stream) searchParams.append('stream', stream);
+        if (start) searchParams.append('start', `${start}`);
+        if (duration) searchParams.append('duration', `${duration}`);
+
+        playlist.uri = `/${type}.m3u8?${searchParams.toString()}`;
       });
     }
 

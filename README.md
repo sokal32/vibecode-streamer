@@ -179,18 +179,6 @@ curl "http://localhost:3000/health"
 </html>
 ```
 
-### Using with HLS.js
-
-```javascript
-import Hls from 'hls.js';
-
-const video = document.getElementById('video');
-const hls = new Hls();
-
-hls.loadSource('http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0');
-hls.attachMedia(video);
-```
-
 ### Using with FFmpeg
 
 ```bash
@@ -254,6 +242,18 @@ Run the test suite:
 
 ```bash
 npm test
+```
+
+## SSL
+
+To play stream in browser you need to enable HTTPS.
+You need to enable it in `.env` by setting `SSL=1` and optionally paths and passphrase (`SSL_KEY_PATH`, `SSL_CERT_PATH`, `SSL_PASSPHRASE`).
+You can use your own key/cert or generate it with `openssl`:
+
+```bash
+mkdir cert
+cd cert
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365
 ```
 
 ## Limitations

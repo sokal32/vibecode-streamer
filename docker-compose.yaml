@@ -8,7 +8,9 @@ services:
     container_name: streamer
     ports:
       - "3000:3000"
+    # For production setup HTTPS is disabled, use something like nginx+letsencrypt for this purpose
     environment:
+      - SSL=
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
