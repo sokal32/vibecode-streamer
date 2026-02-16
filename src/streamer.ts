@@ -2,7 +2,7 @@ import type { Response } from "express";
 import { createHash } from 'crypto';
 import axios from "axios";
 import { streams } from "../streams";
-import { parseM3U8, encodeM3U8, createTag, type M3U8Playlist, type MediaSegment, updateOrAddTag } from "./m3u8";
+import { parseM3U8, encodeM3U8, createTag, type M3U8Playlist, type MediaSegment, updateOrAddTag, updateTagAttribute } from "./m3u8";
 
 export class Streamer {
   private readonly defaultWindowSize = 3;
@@ -27,26 +27,40 @@ export class Streamer {
       : this.generateMaster('live', stream, manifest, start);
   }
 
-  // Replace variant URIs with our links
+  // Replace variant and media rendition URIs with our links
   private generateMaster(type: 'vod' | 'live', stream: string | undefined, manifest: M3U8Playlist, start: number, duration?: number): string {
     const output = structuredClone(manifest);
+    let index = 0;
 
-    // TODO: need to handle audio streams here too
+    // Rewrite EXT-X-STREAM-INF variant URIs
     if (output.variants) {
-      output.variants.forEach((playlist, i) => {
-        const searchParams = new URLSearchParams();
-        
-        searchParams.append('variant', `${i}`);
+      for (const playlist of output.variants) {
+        playlist.uri = `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration)}`;
+        index++;
+      }
+    }
 
-        if (stream) searchParams.append('stream', stream);
-        if (start) searchParams.append('start', `${start}`);
-        if (duration) searchParams.append('duration', `${duration}`);
-
-        playlist.uri = `/${type}.m3u8?${searchParams.toString()}`;
-      });
+    // Rewrite EXT-X-MEDIA rendition URIs
+    for (const tag of output.tags) {
+      if (tag.name === 'EXT-X-MEDIA' && tag.attributes?.URI) {
+        updateTagAttribute(tag, 'URI', `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration)}`);
+        index++;
+      }
     }
 
     return encodeM3U8(output);
+  }
+
+  private buildVariantQuery(index: number, stream?: string, start?: number, duration?: number): string {
+    const params = new URLSearchParams();
+
+    params.append('variant', `${index}`);
+    
+    if (stream) params.append('stream', stream);
+    if (start) params.append('start', `${start}`);
+    if (duration) params.append('duration', `${duration}`);
+
+    return params.toString();
   }
 
   // Generate VOD variant stream with optional specified duration
@@ -175,22 +189,36 @@ export class Streamer {
         this.cache[masterKey] = master;
       }
 
-      const targetVariant = master.variants?.[variant];
-      if (!targetVariant) {
-        throw new Error(`Requested variant index is out of range (max: ${(master.variants?.length ?? 0) - 1})`);
-      }
+      const variantCount = master.variants?.length ?? 0;
+      const mediaTags = master.tags.filter(t => t.name === 'EXT-X-MEDIA' && t.attributes?.URI);
 
-      url = this.resolveRelativeURL(targetVariant.uri, streamURL);
+      if (variant < variantCount) {
+        url = this.resolveRelativeURL(master.variants![variant].uri, streamURL);
+      } else {
+        const mediaTag = mediaTags[variant - variantCount];
+        if (!mediaTag) {
+          throw new Error(`Requested variant index is out of range (max: ${variantCount + mediaTags.length - 1})`);
+        }
+        url = this.resolveRelativeURL(mediaTag.attributes!.URI, streamURL);
+      }
     }
 
     const manifest = await this.downloadManifest(url);
     const parsed = parseM3U8(manifest);
 
     this.cache[targetKey] = parsed;
-    this.cache[targetKey].url = this.resolveRelativeURL(url, streamURL);
 
     parsed.segments?.forEach((segment) => {
       segment.uri = this.resolveRelativeURL(segment.uri, url);
+
+      if (segment.map) {
+        const resolved = this.resolveRelativeURL(segment.map.uri, url);
+        const mapTag = segment.tags.find(t => t.name === 'EXT-X-MAP');
+        if (mapTag) {
+          updateTagAttribute(mapTag, 'URI', resolved);
+        }
+        segment.map.uri = resolved;
+      }
     });
 
     return parsed;

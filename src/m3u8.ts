@@ -15,7 +15,6 @@ export interface M3U8Playlist {
   tags: Tag[];
   segments?: MediaSegment[];
   variants?: Variant[];
-  url?: string;
 }
 
 export interface Tag {
@@ -101,6 +100,10 @@ export function parseM3U8(content: string): M3U8Playlist {
   let segmentTags: Tag[] = [];
   let variantTags: Tag[] = [];
 
+  // Sticky state: these tags apply to all subsequent segments until replaced
+  let stickyMap: MediaInitSection | undefined;
+  let stickyKey: EncryptionKey | undefined;
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
 
@@ -155,10 +158,12 @@ export function parseM3U8(content: string): M3U8Playlist {
       };
       variantTags = [];
     } else if (tag.name === 'EXTINF') {
-      // Media segment
+      // Media segment — apply sticky map/key from preceding tags
       currentSegment = {
         duration: parseFloat(tag.value?.split(',')[0] || '0'),
         title: tag.value?.split(',').slice(1).join(',') || undefined,
+        map: stickyMap,
+        key: stickyKey,
         tags: [...segmentTags, tag],
         uri: '',
       };
@@ -187,6 +192,7 @@ export function parseM3U8(content: string): M3U8Playlist {
         keyFormatVersions: attrs.KEYFORMATVERSIONS,
         attributes: attrs,
       };
+      stickyKey = key;
       if (currentSegment) {
         currentSegment.key = key;
         currentSegment.tags?.push(tag);
@@ -200,6 +206,7 @@ export function parseM3U8(content: string): M3U8Playlist {
         byteRange: attrs.BYTERANGE,
         attributes: attrs,
       };
+      stickyMap = map;
       if (currentSegment) {
         currentSegment.map = map;
         currentSegment.tags?.push(tag);
