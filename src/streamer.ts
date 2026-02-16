@@ -188,19 +188,7 @@ export class Streamer {
         master = parseM3U8(masterManifest);
         this.cache[masterKey] = master;
       }
-
-      const variantCount = master.variants?.length ?? 0;
-      const mediaTags = master.tags.filter(t => t.name === 'EXT-X-MEDIA' && t.attributes?.URI);
-
-      if (variant < variantCount) {
-        url = this.resolveRelativeURL(master.variants![variant].uri, streamURL);
-      } else {
-        const mediaTag = mediaTags[variant - variantCount];
-        if (!mediaTag) {
-          throw new Error(`Requested variant index is out of range (max: ${variantCount + mediaTags.length - 1})`);
-        }
-        url = this.resolveRelativeURL(mediaTag.attributes!.URI, streamURL);
-      }
+      url = this.normalizeVariantURI(master, streamURL, variant);
     }
 
     const manifest = await this.downloadManifest(url);
@@ -208,20 +196,48 @@ export class Streamer {
 
     this.cache[targetKey] = parsed;
 
-    parsed.segments?.forEach((segment) => {
-      segment.uri = this.resolveRelativeURL(segment.uri, url);
-
-      if (segment.map) {
-        const resolved = this.resolveRelativeURL(segment.map.uri, url);
-        const mapTag = segment.tags.find(t => t.name === 'EXT-X-MAP');
-        if (mapTag) {
-          updateTagAttribute(mapTag, 'URI', resolved);
-        }
-        segment.map.uri = resolved;
-      }
-    });
+    parsed.segments?.forEach((segment) => this.normalizeSegmentURI(segment, url));
 
     return parsed;
+  }
+
+  private normalizeVariantURI(master: M3U8Playlist, streamURL: string, variant: number) {
+    const variantCount = master.variants?.length ?? 0;
+    const mediaTags = master.tags.filter(t => t.name === 'EXT-X-MEDIA' && t.attributes?.URI);
+
+    if (variant < variantCount) {
+      return this.normalizeRelativeURL(master.variants![variant].uri, streamURL);
+    } else {
+      const mediaTag = mediaTags[variant - variantCount];
+      if (!mediaTag) {
+        throw new Error(`Requested variant index is out of range (max: ${variantCount + mediaTags.length - 1})`);
+      }
+      return this.normalizeRelativeURL(mediaTag.attributes!.URI, streamURL);
+    }
+  }
+
+  private normalizeSegmentURI(segment: MediaSegment, streamURL: string) {
+    segment.uri = this.normalizeRelativeURL(segment.uri, streamURL);
+
+    if (segment.map) {
+      const resolved = this.normalizeRelativeURL(segment.map.uri, streamURL);
+      const mapTag = segment.tags.find(t => t.name === 'EXT-X-MAP');
+      if (mapTag) {
+        updateTagAttribute(mapTag, 'URI', resolved);
+      }
+      segment.map.uri = resolved;
+    }
+  }
+
+  private normalizeRelativeURL(relativeURL: string, streamURL: string) {
+    return new URL(relativeURL, streamURL).toString();
+  }
+
+  private resolveStreamURL(stream?: string): string {
+    if (!stream) {
+      return streams.BigBuckBunny;
+    }
+    return streams[stream] ?? stream;
   }
 
   private async downloadManifest(url: string): Promise<string> {
@@ -244,21 +260,10 @@ export class Streamer {
     res.send(Buffer.from(manifest, "utf-8"));
   }
 
-  private resolveStreamURL(stream?: string): string {
-    if (!stream) {
-      return streams.BigBuckBunny;
-    }
-    return streams[stream] ?? stream;
-  }
-
-  private resolveRelativeURL(relativeURL: string, streamURL: string) {
-    return new URL(relativeURL, streamURL).toString();
-  }
-
   private getCacheKey(url: string, variant?: number): string {
     const name = variant ?? 'master';
     const hash = createHash('sha256').update(url).digest('hex');
 
-    return `manifest/${hash}/${name}`;
+    return `${hash}-${name}`;
   }
 }
