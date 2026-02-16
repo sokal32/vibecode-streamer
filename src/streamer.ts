@@ -65,7 +65,7 @@ export class Streamer {
 
     // Build segment list until we reach or exceed the target duration
     while (accumulatedDuration < duration) {
-      const segment = { ...vod[i % vod.length] };
+      const segment = structuredClone(vod[i % vod.length]);
 
       // Add discontinuity when looping back to the start
       if (i >= vod.length && i % vod.length === 0) {
@@ -103,45 +103,32 @@ export class Streamer {
     const actualWindowSize = Math.min(windowSize, vod.length);
     const segments: MediaSegment[] = vod.slice(0, actualWindowSize).map(s => structuredClone(s));
 
-    let i = 0;
+    let nextTailIndex = actualWindowSize;
     let mediaSequence = 0;
     let discontinuitySequence = 0;
     let elapsed = (now - start) / 1000;
-    let hasLooped = false;
 
-    while (elapsed > vod[i].duration) {
-      const segment = structuredClone(vod[i]);
+    while (elapsed > segments[0].duration) {
+      const nextIdx = nextTailIndex % vod.length;
+      const segment = structuredClone(vod[nextIdx]);
 
       // Handle discontinuity at the start of each VOD loop
-      if (i === 0 && mediaSequence > 0) {
-        hasLooped = true;
+      if (nextIdx === 0) {
         segment.discontinuity = true;
         segment.tags = [createTag('EXT-X-DISCONTINUITY'), ...(segment.tags || [])];
       }
 
-      // Push segment to tail and remove from head (shuffle)
+      // Push next segment to tail and remove elapsed head (sliding window)
       segments.push(segment);
 
-      const removed = segments.shift();
-      if (removed?.discontinuity) {
+      const removed = segments.shift()!;
+      if (removed.discontinuity) {
         discontinuitySequence++;
       }
 
-      elapsed -= segment.duration;
+      elapsed -= removed.duration;
       mediaSequence += 1;
-
-      i += 1;
-      if (i >= vod.length) {
-        i = 0;
-        hasLooped = true;
-      }
-    }
-
-    // If we've looped but the current head segment doesn't have a discontinuity tag yet,
-    // we need to add it because the head is the next segment to be played after looping
-    if (hasLooped && i === 0 && !segments[0].discontinuity) {
-      segments[0].discontinuity = true;
-      segments[0].tags = [createTag('EXT-X-DISCONTINUITY'), ...(segments[0].tags || [])];
+      nextTailIndex += 1;
     }
 
     output.segments = segments;
@@ -151,7 +138,6 @@ export class Streamer {
 
   // Generate Live variant M3U8 playlist
   private generateVariant(manifest: M3U8Playlist, mediaSequence: number, discontinuitySequence: number) {
-    // Guard against empty segments
     if (!manifest.segments?.length) {
       return encodeM3U8(manifest);
     }
@@ -161,11 +147,10 @@ export class Streamer {
     updateOrAddTag(manifest, 'EXT-X-TARGETDURATION', Math.ceil(targetDuration).toString());
     updateOrAddTag(manifest, 'EXT-X-MEDIA-SEQUENCE', mediaSequence.toString());
     updateOrAddTag(manifest, 'EXT-X-DISCONTINUITY-SEQUENCE', discontinuitySequence.toString());
+    updateOrAddTag(manifest, 'EXT-X-START', 'TIME-OFFSET=0.0');
 
     // Remove VOD-specific tags
-    manifest.tags = manifest.tags.filter(t =>
-      t.name !== 'EXT-X-PLAYLIST-TYPE' && t.name !== 'EXT-X-ENDLIST'
-    );
+    manifest.tags = manifest.tags.filter(t => !['EXT-X-PLAYLIST-TYPE', 'EXT-X-ENDLIST'].includes(t.name));
 
     return encodeM3U8(manifest);
   }
@@ -183,9 +168,11 @@ export class Streamer {
 
     // If a variant is specified, get the master manifest first to get the variant URI
     if (variant !== undefined) {
-      const master = this.cache[masterKey];
+      let master = this.cache[masterKey];
       if (!master) {
-        throw new Error('Received request to variant before master');
+        const masterManifest = await this.downloadManifest(streamURL);
+        master = parseM3U8(masterManifest);
+        this.cache[masterKey] = master;
       }
 
       const targetVariant = master.variants?.[variant];

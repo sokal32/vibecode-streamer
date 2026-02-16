@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
 import { Streamer } from '../src/streamer';
+import { parseM3U8 } from '../src/m3u8';
 
 // Mock axios to prevent actual HTTP requests
 jest.mock('axios');
@@ -21,13 +22,13 @@ variant-0.m3u8`;
 
     const mockVariantManifest = `#EXTM3U\n#EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:10
-#EXTINF:10.0,Segment 1
+#EXTINF:10.0
 segment-0.ts
-#EXTINF:10.0,Segment 2
+#EXTINF:10.0
 segment-1.ts
-#EXTINF:10.0,Segment 3
+#EXTINF:10.0
 segment-2.ts
-#EXTINF:10.0,Segment 4
+#EXTINF:10.0
 segment-3.ts`;
 
     const axios = require('axios');
@@ -53,9 +54,12 @@ segment-3.ts`;
     expect(result).toContain('#EXT-X-DISCONTINUITY-SEQUENCE:');
     expect(result).toContain('#EXT-X-TARGETDURATION:');
 
-    // Count segments (should be window size = 3)
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(3);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(3);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-0.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-1.ts');
+    expect(playlist.segments![2].uri).toBe('https://example.com/segment-2.ts');
   });
 
   test('should handle live stream when elapsed time is less than VOD duration', async () => {
@@ -99,9 +103,12 @@ segment-3.ts`;
     // Should NOT have discontinuity tag (no looping yet) - use newline to avoid matching DISCONTINUITY-SEQUENCE
     expect(result).not.toContain('#EXT-X-DISCONTINUITY\n');
 
-    // Count segments
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(3);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(3);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-1.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-2.ts');
+    expect(playlist.segments![2].uri).toBe('https://example.com/segment-3.ts');
   });
 
   test('should handle live stream when elapsed time exceeds VOD duration (first loop)', async () => {
@@ -149,9 +156,12 @@ segment-2.ts`;
     const discSeq = parseInt(discSeqMatch![1]);
     expect(discSeq).toBe(0);
 
-    // Count segments (should still be window size = 3)
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(3);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(3);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-0.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-1.ts');
+    expect(playlist.segments![2].uri).toBe('https://example.com/segment-2.ts');
   });
 
   test('should handle live stream when elapsed time exceeds VOD duration multiple times', async () => {
@@ -197,9 +207,11 @@ segment-1.ts`;
     const discSeq = parseInt(discSeqMatch![1]);
     expect(discSeq).toBeGreaterThan(0);
 
-    // Count segments (VOD has only 2 segments, so window will have 2)
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(2);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(2);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-0.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-1.ts');
   });
 
   test('should support custom window size for live streams', async () => {
@@ -237,9 +249,14 @@ segment-4.ts`;
     // Then fetch the variant with custom window size
     const result = await streamer.convertVODToLive('https://example.com/live4.m3u8', 0, start, now, windowSize);
 
-    // Count segments (should be custom window size = 5)
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(5);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(5);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-0.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-1.ts');
+    expect(playlist.segments![2].uri).toBe('https://example.com/segment-2.ts');
+    expect(playlist.segments![3].uri).toBe('https://example.com/segment-3.ts');
+    expect(playlist.segments![4].uri).toBe('https://example.com/segment-4.ts');
   });
 
   test('should handle master playlist request for live', async () => {
@@ -309,8 +326,10 @@ segment-1.ts`;
     const mediaSeq = parseInt(mediaSeqMatch![1]);
     expect(mediaSeq).toBeGreaterThan(0);
 
-    // Count segments (VOD has only 2 segments, so window will have 2)
-    const segmentCount = (result.match(/segment-\d+\.ts/g) || []).length;
-    expect(segmentCount).toBe(2);
+    // Parse and verify segments
+    const playlist = parseM3U8(result);
+    expect(playlist.segments).toHaveLength(2);
+    expect(playlist.segments![0].uri).toBe('https://example.com/segment-0.ts');
+    expect(playlist.segments![1].uri).toBe('https://example.com/segment-1.ts');
   });
 });
