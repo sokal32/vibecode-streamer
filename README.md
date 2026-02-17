@@ -13,6 +13,7 @@ A TypeScript application that converts HLS VOD (Video on Demand) streams into li
 - **Duration Control**: Extend or limit VOD content to specific durations
 - **Manifest Caching**: Caches manifests for improved performance
 - **CORS Enabled**: Supports cross-origin requests for web players
+- **Ad Break Injection**: Insert SCTE-35 ad markers (CUE-OUT/CUE-IN) at fixed intervals or specific timestamps
 
 ## Test Streams
 
@@ -71,6 +72,7 @@ Generate or manipulate a VOD (Video on Demand) manifest.
 | `stream` | string | Yes | Stream identifier (e.g., "BigBuckBunny") or full URL to HLS manifest |
 | `variant` | number | No | Variant index for quality selection. If omitted, returns master manifest |
 | `duration` | number | No | Target duration in seconds. Content will loop to fill duration if needed |
+| `ad` | string | No | Ad break configuration (see [Ad Breaks](#ad-breaks) below) |
 
 **Examples:**
 
@@ -86,6 +88,12 @@ curl "http://localhost:3000/vod.m3u8?stream=BigBuckBunny&variant=0&duration=120"
 
 # Use custom stream URL
 curl "http://localhost:3000/vod.m3u8?stream=https://example.com/vod/master.m3u8"
+
+# VOD with 15-second ad breaks every 30 seconds
+curl "http://localhost:3000/vod.m3u8?stream=BigBuckBunny&variant=0&ad=interval,15,30"
+
+# VOD with 20-second ad breaks at specific timestamps
+curl "http://localhost:3000/vod.m3u8?stream=BigBuckBunny&variant=0&ad=ts,20,00:05:00,00:15:30"
 ```
 
 **Response:**
@@ -107,6 +115,7 @@ Convert a VOD stream to live streaming format with sliding window behavior.
 | `start` | number | No | Stream start timestamp in milliseconds (epoch). Defaults to current time |
 | `now` | number | No | Current timestamp in milliseconds (epoch). Defaults to current time |
 | `windowSize` | number | No | Number of segments in the sliding window (default: 3) |
+| `ad` | string | No | Ad break configuration (see [Ad Breaks](#ad-breaks) below) |
 
 **Examples:**
 
@@ -126,6 +135,9 @@ curl "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0&windowSize=5
 
 # Custom stream URL in live mode
 curl "http://localhost:3000/live.m3u8?stream=https://example.com/vod/master.m3u8&variant=0"
+
+# Live stream with 10-second ad breaks every 60 seconds
+curl "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0&ad=interval,10,60"
 ```
 
 **Response:**
@@ -210,6 +222,56 @@ ffmpeg -i "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0" \
 6. Removes VOD-specific tags to indicate live streaming
 7. Returns a live manifest that updates over time
 
+## Ad Breaks
+
+The `ad` query parameter injects SCTE-35 style ad markers (`EXT-X-CUE-OUT`, `EXT-X-CUE-OUT-CONT`, `EXT-X-CUE-IN`) into both VOD and live playlists. This is useful for testing ad insertion workflows and SSAI (Server-Side Ad Insertion) integrations.
+
+The parameter format is a comma-separated string. The first value selects the mode:
+
+### Interval Mode
+
+Insert ad breaks at regular intervals.
+
+**Format:** `interval,<duration>,<interval>`
+
+| Field | Description |
+|-------|-------------|
+| `duration` | Length of each ad break in seconds |
+| `interval` | Seconds between ad break start times |
+
+```bash
+# 15-second ad break every 30 seconds
+ad=interval,15,30
+```
+
+### Timestamp Mode
+
+Insert ad breaks at specific times in the stream.
+
+**Format:** `ts,<duration>,<time1>,<time2>,...`
+
+| Field | Description |
+|-------|-------------|
+| `duration` | Length of each ad break in seconds |
+| `timeN` | Ad break start time in `HH:MM:SS` format |
+
+```bash
+# 20-second ad breaks at 5 minutes and 15 minutes 30 seconds
+ad=ts,20,00:05:00,00:15:30
+```
+
+### Generated Tags
+
+The following HLS tags are injected into the segment playlist:
+
+| Tag | When |
+|-----|------|
+| `#EXT-X-CUE-OUT:<duration>` | First segment of an ad break |
+| `#EXT-X-CUE-OUT-CONT:<elapsed>/<duration>` | Continuation segments within the ad break |
+| `#EXT-X-CUE-IN` | First segment after the ad break ends |
+
+When requesting a master playlist with the `ad` parameter, variant URIs are automatically rewritten to include the ad configuration so that all variant requests carry the same ad breaks.
+
 ## Architecture
 
 ### Project Structure
@@ -218,7 +280,10 @@ ffmpeg -i "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0" \
 streamer/
 ├── src/
 │   ├── streamer.ts      # Core streaming logic
-│   └── m3u8.ts          # M3U8 parser and encoder
+│   ├── m3u8.ts          # M3U8 parser and encoder
+│   └── ads.ts           # Ad break injection (SCTE-35 markers)
+├── tests/
+│   └── ads.test.ts      # Ad break unit and integration tests
 ├── streams.ts           # Predefined test streams
 ├── main.ts              # Express server setup
 └── package.json
@@ -228,6 +293,7 @@ streamer/
 
 - **Streamer Class** ([src/streamer.ts](src/streamer.ts)) - Main logic for VOD and live conversion
 - **M3U8 Parser** ([src/m3u8.ts](src/m3u8.ts)) - Handles parsing and encoding of M3U8 playlists
+- **Ad Breaks** ([src/ads.ts](src/ads.ts)) - Parses ad config and injects CUE-OUT/CUE-IN tags into segments
 - **Express Server** ([main.ts](main.ts)) - HTTP API endpoints
 
 ## Environment Variables

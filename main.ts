@@ -3,6 +3,7 @@ import * as https from 'https';
 import dotenv from 'dotenv';
 import express from 'express';
 import { Streamer } from './src/streamer';
+import { parseAdParam } from './src/ads';
 
 const app = express();
 const streamer = new Streamer();
@@ -14,8 +15,9 @@ app.get('/live.m3u8', async (req, res) => {
     const start = req.query.start ? +req.query.start : Date.now();
     const now = req.query.now ? +req.query.now : Date.now();
     const windowSize = req.query.windowSize ? +req.query.windowSize : undefined;
+    const ad = req.query.ad ? parseAdParam(req.query.ad.toString()) : undefined;
 
-    const manifest = await streamer.convertVODToLive(stream, variant, start, now, windowSize);
+    const manifest = await streamer.convertVODToLive(stream, variant, start, now, windowSize, ad);
 
     await streamer.sendManifest(res, manifest);
   } catch (error) {
@@ -29,8 +31,9 @@ app.get('/vod.m3u8', async (req, res) => {
     const stream = req.query.stream?.toString();
     const variant = req.query.variant ? +req.query.variant : undefined;
     const duration = req.query.duration ? +req.query.duration : undefined;
+    const ad = req.query.ad ? parseAdParam(req.query.ad.toString()) : undefined;
 
-    const manifest = await streamer.makeVOD(stream, variant, duration);
+    const manifest = await streamer.makeVOD(stream, variant, duration, ad);
     
     await streamer.sendManifest(res, manifest);
   } catch (error) {

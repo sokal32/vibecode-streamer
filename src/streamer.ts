@@ -3,39 +3,40 @@ import { createHash } from 'crypto';
 import axios from "axios";
 import { streams } from "../streams";
 import { parseM3U8, encodeM3U8, createTag, type M3U8Playlist, type MediaSegment, updateOrAddTag, updateTagAttribute } from "./m3u8";
+import { injectAdBreaks, type AdConfig } from "./ads";
 
 export class Streamer {
   private readonly defaultWindowSize = 3;
 
   private cache: Record<string, M3U8Playlist> = {};
 
-  async makeVOD(stream?: string, variant?: number, duration?: number): Promise<string> {
+  async makeVOD(stream?: string, variant?: number, duration?: number, ad?: AdConfig): Promise<string> {
     const streamURL = this.resolveStreamURL(stream);
     const manifest = await this.fetchManifest(streamURL, variant);
 
     return variant !== undefined
-      ? this.fitVariant(manifest, duration)
-      : this.generateMaster('vod', stream, manifest, 0, duration);
+      ? this.fitVariant(manifest, duration, ad)
+      : this.generateMaster('vod', stream, manifest, 0, duration, ad);
   }
 
-  async convertVODToLive(stream?: string, variant?: number, start = Date.now(), now = Date.now(), windowSize = this.defaultWindowSize): Promise<string> {
+  async convertVODToLive(stream?: string, variant?: number, start = Date.now(), now = Date.now(), windowSize = this.defaultWindowSize, ad?: AdConfig): Promise<string> {
     const streamURL = this.resolveStreamURL(stream);
     const manifest = await this.fetchManifest(streamURL, variant);
 
     return variant !== undefined
-      ? this.shuffleVariant(manifest, start, now, windowSize)
-      : this.generateMaster('live', stream, manifest, start);
+      ? this.shuffleVariant(manifest, start, now, windowSize, ad)
+      : this.generateMaster('live', stream, manifest, start, undefined, ad);
   }
 
   // Replace variant and media rendition URIs with our links
-  private generateMaster(type: 'vod' | 'live', stream: string | undefined, manifest: M3U8Playlist, start: number, duration?: number): string {
+  private generateMaster(type: 'vod' | 'live', stream: string | undefined, manifest: M3U8Playlist, start: number, duration?: number, ad?: AdConfig): string {
     const output = structuredClone(manifest);
     let index = 0;
 
     // Rewrite EXT-X-STREAM-INF variant URIs
     if (output.variants) {
       for (const playlist of output.variants) {
-        playlist.uri = `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration)}`;
+        playlist.uri = `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration, ad)}`;
         index++;
       }
     }
@@ -43,7 +44,7 @@ export class Streamer {
     // Rewrite EXT-X-MEDIA rendition URIs
     for (const tag of output.tags) {
       if (tag.name === 'EXT-X-MEDIA' && tag.attributes?.URI) {
-        updateTagAttribute(tag, 'URI', `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration)}`);
+        updateTagAttribute(tag, 'URI', `/${type}.m3u8?${this.buildVariantQuery(index, stream, start, duration, ad)}`);
         index++;
       }
     }
@@ -51,22 +52,39 @@ export class Streamer {
     return encodeM3U8(output);
   }
 
-  private buildVariantQuery(index: number, stream?: string, start?: number, duration?: number): string {
+  private buildVariantQuery(index: number, stream?: string, start?: number, duration?: number, ad?: AdConfig): string {
     const params = new URLSearchParams();
 
     params.append('variant', `${index}`);
-    
+
     if (stream) params.append('stream', stream);
     if (start) params.append('start', `${start}`);
     if (duration) params.append('duration', `${duration}`);
+    if (ad) params.append('ad', this.encodeAdParam(ad));
 
     return params.toString();
   }
 
+  private encodeAdParam(ad: AdConfig): string {
+    if (ad.mode === 'interval') {
+      return `interval,${ad.duration},${ad.interval}`;
+    }
+    const timestamps = (ad.timestamps || []).map(t => {
+      const h = Math.floor(t / 3600).toString().padStart(2, '0');
+      const m = Math.floor((t % 3600) / 60).toString().padStart(2, '0');
+      const s = Math.floor(t % 60).toString().padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    });
+    return `ts,${ad.duration},${timestamps.join(',')}`;
+  }
+
   // Generate VOD variant stream with optional specified duration
-  private fitVariant(manifest: M3U8Playlist, duration?: number): string {
+  private fitVariant(manifest: M3U8Playlist, duration?: number, ad?: AdConfig): string {
     // If we don't limit/extend duration or have empty segments list we just encode playlist as is
     if (!manifest.segments?.length || !duration) {
+      if (ad && manifest.segments?.length) {
+        injectAdBreaks(manifest.segments, ad, 0);
+      }
       return this.generateVODVariant(manifest);
     }
 
@@ -95,6 +113,10 @@ export class Streamer {
 
     output.segments = segments;
 
+    if (ad) {
+      injectAdBreaks(output.segments, ad, 0);
+    }
+
     return this.generateVODVariant(output);
   }
 
@@ -110,7 +132,7 @@ export class Streamer {
   }
 
   // Generate Live variant stream from VOD manifest by shuffling segments
-  private shuffleVariant(manifest: M3U8Playlist, start: number, now: number, windowSize: number): string {
+  private shuffleVariant(manifest: M3U8Playlist, start: number, now: number, windowSize: number, ad?: AdConfig): string {
     const output = structuredClone(manifest);
     const vod = manifest.segments || [];
     // Clamp window size to VOD length to avoid having fewer segments than expected
@@ -146,6 +168,12 @@ export class Streamer {
     }
 
     output.segments = segments;
+
+    if (ad) {
+      // Absolute playback time of the first segment in the window
+      const startOffset = ((now - start) / 1000) - elapsed;
+      injectAdBreaks(segments, ad, startOffset);
+    }
 
     return this.generateVariant(output, mediaSequence, discontinuitySequence);
   }
