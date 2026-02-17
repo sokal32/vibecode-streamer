@@ -170,27 +170,6 @@ curl "http://localhost:3000/health"
 
 ## Usage Examples
 
-### Using with Video.js
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
-</head>
-<body>
-  <video id="my-video" class="video-js" controls preload="auto" width="640" height="264">
-    <source src="http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0" type="application/x-mpegURL">
-  </video>
-
-  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-  <script>
-    var player = videojs('my-video');
-  </script>
-</body>
-</html>
-```
-
 ### Using with FFmpeg
 
 ```bash
@@ -201,6 +180,29 @@ ffplay "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0"
 ffmpeg -i "http://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0" \
   -c copy output.mp4
 ```
+
+### Using with Video.js
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+</head>
+<body>
+  <video id="my-video" class="video-js" controls preload="auto" width="640" height="264">
+    <source src="https://localhost:3000/live.m3u8?stream=BigBuckBunny&variant=0" type="application/x-mpegURL">
+  </video>
+
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script>
+    var player = videojs('my-video');
+  </script>
+</body>
+</html>
+```
+
+> **Note:** This example uses `https://localhost` to work in browser environment, which requires SSL to be enabled. See [SSL configuration](#ssl-configuration) for setup instructions.
 
 ## How It Works
 
@@ -302,6 +304,24 @@ streamer/
 |----------|-------------|---------|
 | `PORT` | Server port | 3000 |
 
+### SSL configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SSL` | Any non-empty value enables HTTPS; leave empty to disable | _(empty)_ |
+| `SSL_KEY_PATH` | Path to the private key file | `cert/key.pem` |
+| `SSL_CERT_PATH` | Path to the certificate file | `cert/cert.pem` |
+| `SSL_PASSPHRASE` | Passphrase for the private key (if set during generation) | _(none)_ |
+
+The Docker Compose setup runs with `SSL=` (disabled) since production deployments typically terminate TLS at a reverse proxy like nginx with Let's Encrypt.
+
+### Generating a self-signed certificate (interactive mode)
+
+```bash
+mkdir ./cert
+openssl req -x509 -newkey rsa:4096 -keyout cert/key.pem -out cert/cert.pem -sha256 -days 365
+```
+
 ## Testing
 
 Run the test suite:
@@ -310,21 +330,10 @@ Run the test suite:
 npm test
 ```
 
-## SSL
-
-To play stream in browser you need to enable HTTPS.
-You need to enable it in `.env` by setting `SSL=1` and optionally paths and passphrase (`SSL_KEY_PATH`, `SSL_CERT_PATH`, `SSL_PASSPHRASE`).
-You can use your own key/cert or generate it with `openssl`:
-
-```bash
-mkdir cert
-cd cert
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365
-```
+Most browsers block mixed content and refuse to load HTTP streams on HTTPS pages. To test playback locally, the server supports HTTPS with a self-signed certificate.
 
 ## Limitations
 
-- Audio-only streams are not fully supported in master manifest generation (see TODO in [src/streamer.ts:32](src/streamer.ts#L32))
 - Caching is in-memory only (will not persist across restarts)
 - No authentication or rate limiting included
 
@@ -339,4 +348,4 @@ CC-BY-4.0
 ## Credits
 
 - Test streams provided by [Mux](https://mux.com/) - https://test-streams.mux.dev/
-- Developed through collaborative effort between human direction and AI code generation
+- Developed through collaborative effort between human direction and AI code generation (Antrophic)
