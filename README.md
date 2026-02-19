@@ -179,6 +179,8 @@ curl "http://localhost:3000/health"
 </html>
 ```
 
+> **Note:** This example uses `https://localhost` to work in browser environment, which requires SSL to be enabled. See [SSL configuration](#ssl-configuration) for setup instructions.
+
 ### Using with FFmpeg
 
 ```bash
@@ -234,31 +236,35 @@ streamer/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | Server port | 3000 |
+| `PORT` | Server port | `3000` |
+| `SSL` | Any non-empty value enables HTTPS; leave empty to disable | _(empty)_ |
+| `SSL_KEY_PATH` | Path to the private key file | `cert/key.pem` |
+| `SSL_CERT_PATH` | Path to the certificate file | `cert/cert.pem` |
+| `SSL_PASSPHRASE` | Passphrase for the private key (if set during generation) | _(none)_ |
 
-## Testing
+### SSL Configuration
 
-Run the test suite:
+Browsers require HTTPS to play HLS streams. In production, TLS is typically terminated at a reverse proxy (e.g. nginx with Let's Encrypt), which is why the Docker Compose setup runs with `SSL=` (disabled).
 
-```bash
-npm test
+For **local development**, enable SSL in your `.env`:
+
+```env
+SSL=1
+# Optional — override defaults:
+# SSL_KEY_PATH=cert/key.pem
+# SSL_CERT_PATH=cert/cert.pem
+# SSL_PASSPHRASE=your-passphrase
 ```
 
-## SSL
-
-To play stream in browser you need to enable HTTPS.
-You need to enable it in `.env` by setting `SSL=1` and optionally paths and passphrase (`SSL_KEY_PATH`, `SSL_CERT_PATH`, `SSL_PASSPHRASE`).
-You can use your own key/cert or generate it with `openssl`:
+You can use your own certificate or generate a self-signed one:
 
 ```bash
-mkdir cert
-cd cert
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365
+mkdir -p cert && openssl req -x509 -newkey rsa:4096 \
+  -keyout cert/key.pem -out cert/cert.pem -sha256 -days 365
 ```
 
 ## Limitations
 
-- Audio-only streams are not fully supported in master manifest generation (see TODO in [src/streamer.ts:32](src/streamer.ts#L32))
 - Caching is in-memory only (will not persist across restarts)
 - No authentication or rate limiting included
 
@@ -273,4 +279,4 @@ CC-BY-4.0
 ## Credits
 
 - Test streams provided by [Mux](https://mux.com/) - https://test-streams.mux.dev/
-- Developed through collaborative effort between human direction and AI code generation
+- Developed through collaborative effort between human direction and AI code generation (`claude-opus-4-6`)
