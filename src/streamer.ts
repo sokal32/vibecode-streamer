@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import axios from "axios";
 import { streams } from "../streams";
 import { parseM3U8, encodeM3U8, createTag, type M3U8Playlist, type MediaSegment, updateOrAddTag, updateTagAttribute } from "./m3u8";
+import { upstreamFetchesTotal, upstreamFetchDuration, cacheHitsTotal, cacheSize } from "./metrics";
 
 export class Streamer {
   private readonly defaultWindowSize = 3;
@@ -11,7 +12,8 @@ export class Streamer {
 
   async makeVOD(stream?: string, variant?: number, duration?: number): Promise<string> {
     const streamURL = this.resolveStreamURL(stream);
-    const manifest = await this.fetchManifest(streamURL, variant);
+    const streamLabel = stream ?? 'BigBuckBunny';
+    const manifest = await this.fetchManifest(streamURL, streamLabel, variant);
 
     return variant !== undefined
       ? this.fitVariant(manifest, duration)
@@ -20,7 +22,8 @@ export class Streamer {
 
   async convertVODToLive(stream?: string, variant?: number, start = Date.now(), now = Date.now(), windowSize = this.defaultWindowSize): Promise<string> {
     const streamURL = this.resolveStreamURL(stream);
-    const manifest = await this.fetchManifest(streamURL, variant);
+    const streamLabel = stream ?? 'BigBuckBunny';
+    const manifest = await this.fetchManifest(streamURL, streamLabel, variant);
 
     return variant !== undefined
       ? this.shuffleVariant(manifest, start, now, windowSize)
@@ -170,11 +173,13 @@ export class Streamer {
   }
 
   // Download from origin and cache manifest (master or variant)
-  private async fetchManifest(streamURL: string, variant?: number): Promise<M3U8Playlist> {
+  private async fetchManifest(streamURL: string, streamLabel: string, variant?: number): Promise<M3U8Playlist> {
     const targetKey = this.getCacheKey(streamURL, variant); // Could be master or variant manifest cache key
     const masterKey = this.getCacheKey(streamURL);
+    const targetType = variant !== undefined ? 'variant' : 'master';
 
     if (this.cache[targetKey]) {
+      cacheHitsTotal.inc({ stream: streamLabel, type: targetType });
       return this.cache[targetKey];
     }
 
@@ -184,17 +189,19 @@ export class Streamer {
     if (variant !== undefined) {
       let master = this.cache[masterKey];
       if (!master) {
-        const masterManifest = await this.downloadManifest(streamURL);
+        const masterManifest = await this.downloadManifest(streamURL, streamLabel, 'master');
         master = parseM3U8(masterManifest);
         this.cache[masterKey] = master;
+        cacheSize.set(Object.keys(this.cache).length);
       }
       url = this.normalizeVariantURI(master, streamURL, variant);
     }
 
-    const manifest = await this.downloadManifest(url);
+    const manifest = await this.downloadManifest(url, streamLabel, targetType);
     const parsed = parseM3U8(manifest);
 
     this.cache[targetKey] = parsed;
+    cacheSize.set(Object.keys(this.cache).length);
 
     parsed.segments?.forEach((segment) => this.normalizeSegmentURI(segment, url));
 
@@ -240,14 +247,27 @@ export class Streamer {
     return streams[stream] ?? stream;
   }
 
-  private async downloadManifest(url: string): Promise<string> {
-    const response = await axios.get<string>(url, { responseType: 'text' });
+  private async downloadManifest(url: string, streamLabel: string, type: 'variant' | 'master'): Promise<string> {
+    const end = upstreamFetchDuration.startTimer({ stream: streamLabel, type });
+    let status = 'error';
+    try {
+      const response = await axios.get<string>(url, { responseType: 'text' });
+      status = String(response.status);
 
-    if (!response?.data || !response.data.includes('#EXTM3U')) {
-      throw new Error('Invalid manifest content');
+      if (!response?.data || !response.data.includes('#EXTM3U')) {
+        throw new Error('Invalid manifest content');
+      }
+
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status) {
+        status = String(error.response.status);
+      }
+      throw error;
+    } finally {
+      upstreamFetchesTotal.inc({ stream: streamLabel, type, status });
+      end();
     }
-
-    return response.data;
   }
 
   async sendManifest(res: Response, manifest: string) {

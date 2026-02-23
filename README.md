@@ -44,6 +44,22 @@ npm run dev
 
 The server will start on port 3000 by default (configurable via `PORT` environment variable).
 
+### Docker (development)
+
+The default `docker-compose.yaml` is configured for local development. It mounts the current directory into the container and runs `npm run dev` with hot-reload, alongside Prometheus and Grafana for metrics:
+
+```bash
+docker compose up
+```
+
+| Service    | URL                        |
+|------------|----------------------------|
+| Streamer   | http://localhost:3000      |
+| Prometheus | http://localhost:9090      |
+| Grafana    | http://localhost:3001      |
+
+Grafana default credentials: `admin` / `admin`.
+
 ## Production
 
 Build the application:
@@ -56,6 +72,14 @@ Start the production server:
 
 ```bash
 npm start
+```
+
+### Docker (production)
+
+`docker-compose-prod.yaml` builds the app from the `Dockerfile` and runs a single optimised container (no Prometheus/Grafana):
+
+```bash
+docker compose -f docker-compose-prod.yaml up -d
 ```
 
 ## API Endpoints
@@ -155,6 +179,36 @@ Health check endpoint for monitoring and load balancers.
 ```bash
 curl "http://localhost:3000/health"
 ```
+
+---
+
+### GET `/metrics`
+
+Prometheus metrics endpoint. Returns all metrics in the standard Prometheus text exposition format.
+
+**Response:**
+- Content-Type: `text/plain; version=0.0.4; charset=utf-8`
+- Body: Prometheus text format metrics
+
+**Example:**
+
+```bash
+curl "http://localhost:3000/metrics"
+```
+
+#### Exposed Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `streamer_requests_total` | Counter | `stream`, `endpoint`, `type`, `result` | Total incoming manifest requests. `endpoint`: `live`\|`vod`; `type`: `master`\|`variant`; `result`: `success`\|`error` |
+| `streamer_request_duration_seconds` | Histogram | `stream`, `endpoint`, `type` | End-to-end latency of manifest request handling. Buckets: 10ms–5s |
+| `streamer_upstream_fetches_total` | Counter | `stream`, `type`, `status` | Upstream manifest fetches from origin. `status` is the HTTP status code (e.g. `200`, `404`) or `error` for network failures |
+| `streamer_upstream_fetch_duration_seconds` | Histogram | `stream`, `type` | Latency of upstream manifest downloads (cache hits excluded). Buckets: 50ms–10s |
+| `streamer_cache_hits_total` | Counter | `stream`, `type` | Manifest requests served from in-memory cache |
+| `streamer_manifest_requests_total` | Counter | `endpoint`, `type` | Manifest requests by endpoint and variant track (e.g. `type`: `master`, `variant0`, `variant1`, …) |
+| `streamer_cache_size` | Gauge | — | Number of manifest entries currently held in the in-memory cache |
+
+In addition to the custom metrics above, the standard [Node.js default metrics](https://github.com/siimon/prom-client#default-metrics) (event loop lag, GC, heap, etc.) are collected automatically.
 
 ## Usage Examples
 
